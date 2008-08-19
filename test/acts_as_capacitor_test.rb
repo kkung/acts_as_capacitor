@@ -233,6 +233,87 @@ class ActsAsCapacitorTest < Test::Unit::TestCase
     
   end
   
+  def test_cache_flush
+    TestAac1.class_eval %q{
+      acts_as_capacitor({
+        :compression => true,
+        :debug => false,
+        :namespace => "acts_as_capacitor",
+        :readonly => false,
+        :urlencode => false,
+        :c_threshold => 10_000,
+        :servers => ["127.0.0.1:2222"]
+        }, {
+          :trashold => 100,
+          :cache_field => [ 
+            :date
+          ]
+        })
+    }
+    
+    t = TestAac1.new
+    t.date = "20081224"
+    t.today = "2212"
+    t.save
+    
+    t.today = "2213"
+    t.save
+     
+    today = ActiveRecord::Base.connection.select_rows("select today from #{TestAac1.table_name} where id = #{t.id}")
+    today = today.flatten.to_s.to_i
+    
+    assert_equal 2212, today
+    
+    TestAac1.flush_caches(false)
+
+    today = ActiveRecord::Base.connection.select_rows("select today from #{TestAac1.table_name} where id = #{t.id}")
+    today = today.flatten.to_s.to_i
+    
+    assert_equal 2213, today
+    
+    #flush 이후 cache refmap 정상 동작 확인
+    t = TestAac1.find_by_date('20081224')
+    assert_equal false, t.from_cache?
+
+    t = TestAac1.find_by_date('20081224')
+    assert_equal true, t.from_cache?
+    
+  end
+  
+  def test_cache_flush_ttl
+    TestAac1.class_eval %q{
+      acts_as_capacitor({
+        :compression => true,
+        :debug => false,
+        :namespace => "acts_as_capacitor",
+        :readonly => false,
+        :urlencode => false,
+        :c_threshold => 10_000,
+        :servers => ["127.0.0.1:2222"]
+        }, {
+          :trashold => 100,
+          :cache_field => [ 
+            :date
+          ],
+          :ttl => 4.second
+        })
+    }
+    
+    t = TestAac1.new
+    t.date = "20081224"
+    t.today = "2212"
+    t.save
+    
+    assert_equal true, t.cached?
+    sleep(2)
+    TestAac1.flush_caches(true)
+    assert_equal true, t.cached? #ttl 룰에 의해 살아있어야함
+    sleep(2)
+    TestAac1.flush_caches(true)
+    assert_equal false, t.cached?
+    
+  end
+  
   #memcache 에 atomic 하게 increase, decrease할수있는데 이걸 활용할수있는 방법이 있을까?
   def test_atomic_inc_dec_operation
   end

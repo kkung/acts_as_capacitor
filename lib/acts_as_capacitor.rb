@@ -28,7 +28,7 @@ module ActsAsCapacitor
             cache_instance = cache_get(cache_key)
             if cache_key.nil? || cache_instance.nil?
               returning(find(:first, :conditions => { :#{field} => field_value }, *args)) do |instance|
-                instance.cache_put
+                instance.cache_or_flush {}
                 set_cache_ref_map("#{field}",field_value,instance.cache_id)
               end
             else
@@ -73,6 +73,10 @@ module ActsAsCapacitor
       end
     end
     
+    def delete_cache(key)
+      AAC_CACHE.delete(aac_cache_key(key))
+    end
+    
     def cached?(key)
       cache_get(key).nil? ? false : true
     end
@@ -107,6 +111,8 @@ module ActsAsCapacitor
         cache_put(key,instance)
       end
       
+      capacitor[key][:cached_at] = Time.now
+      
       AAC_CACHE.set("capacitor_#{self.name}", capacitor)
       return instance
     end
@@ -126,6 +132,28 @@ module ActsAsCapacitor
       map[field][field_value] = ref_key
     
       AAC_CACHE.set("aac_cache_ref_map_#{self.name}",map)
+    end
+    
+    def flush_caches(use_ttl)
+      capacitor = AAC_CACHE.get("capacitor_#{self.name}") || {}
+      
+      flushs = []
+      capacitor.each_key do |key|
+        if use_ttl &&  @@aac_options[:ttl] > 0
+          flushs << key  if (( Time.now - capacitor[key][:cached_at]) > @@aac_options[:ttl] )
+        else
+          flushs << key
+        end
+      end
+      
+      flushs.each { |flush| 
+        cache_get(flush).save(:force_flush) rescue nil
+        capacitor[flush] = nil  
+        delete_cache(flush)
+      }
+      
+      AAC_CACHE.set("capacitor_#{self.name}", capacitor)
+      
     end
     
   end
@@ -158,6 +186,9 @@ module ActsAsCapacitor
     end
     
     def save(*args)
+      
+      force_flush = args.delete(:force_flush)
+      
       save_proc = proc do
         perform_validation = args.first rescue nil
 
@@ -168,7 +199,7 @@ module ActsAsCapacitor
         end
       end
       
-      if self.new_record?
+      if force_flush || self.new_record?
         save_proc.call
       end
       cache_or_flush(&save_proc)
