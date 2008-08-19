@@ -25,6 +25,7 @@ class ActsAsCapacitorTest < Test::Unit::TestCase
    
     ActiveRecord::Schema.define(:version => 1) do
       create_table :test_aacs do |t|
+        t.column :url_id, :string
         t.column :date, :string
         t.column :today, :integer
         t.column :created_at, :datetime      
@@ -311,6 +312,50 @@ class ActsAsCapacitorTest < Test::Unit::TestCase
     sleep(2)
     TestAac1.flush_caches(true)
     assert_equal false, t.cached?
+    
+  end
+  
+  def test_cache_hit_with_find_conditions
+    TestAac1.class_eval %q{
+      acts_as_capacitor({
+        :compression => true,
+        :debug => false,
+        :namespace => "acts_as_capacitor",
+        :readonly => false,
+        :urlencode => false,
+        :c_threshold => 10_000,
+        :servers => ["127.0.0.1:2222"]
+        }, {
+          :trashold => 100,
+          :cache_field => [ 
+            [:url_id, :date]
+          ]        
+        })
+    }
+    
+    t = TestAac1.new
+    t.url_id = "kkung"
+    t.date = "20081224"
+    t.save
+    
+    assert_equal true, t.cached?
+    t1 = TestAac1.find_by_date('20081224')
+    assert_equal false, t1.from_cache?
+    t1 = TestAac1.find_by_date('20081224')
+    assert_equal true, t1.from_cache?
+    
+    # 이런식으로 작동하게 할까?
+    # options => { :cache_field => [ [:url_id, :date], :date  ]} } ...
+    # TestAac1.find_url_id_with_date(url_id,date) .... 
+    
+    #t2 = TestAac1.find(:first, :conditions => { :url_id => t.url_id, :date => t.date})
+    #첫 접근 시에는 db에서 가져와서 cache한다(refmap이 안만들어졌기 때문)
+    t2 = TestAac1.find_by_url_id_with_date(t.url_id,t.date)
+    assert_equal false, t2.from_cache?
+    
+    t2 = TestAac1.find_by_url_id_with_date(t.url_id,t.date)
+    assert_equal true, t2.from_cache?
+    
     
   end
   

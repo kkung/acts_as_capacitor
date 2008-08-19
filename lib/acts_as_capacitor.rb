@@ -11,31 +11,64 @@ module ActsAsCapacitor
   
   module ClassMethods
     
+    def cache_field_alias_eval(field)
+      self.class_eval <<-EOS, __FILE__, __LINE__   
+        def self.find_by_#{field}(*args)
+          
+          field_value = args.shift
+        
+          cache_key = nil
+          if "#{field}" == "id"
+            cache_key = field_value
+          else
+            cache_key = get_cache_ref_map("#{field}",field_value)
+          end        
+               
+          cache_instance = cache_get(cache_key)
+          if cache_key.nil? || cache_instance.nil?
+            returning(find(:first, :conditions => { :#{field} => field_value }, *args)) do |instance|
+              instance.cache_or_flush {}
+              set_cache_ref_map("#{field}",field_value,instance.cache_id)
+            end
+          else
+            cache_instance
+          end
+        end          
+      EOS
+    end
+    
+    def cache_field_alias_multiple_eval(fields)
+      
+      self.class_eval <<-EOS, __FILE__, __LINE__
+        
+        def self.find_by_#{fields.join("_with_")}(*args)
+          
+          cache_key = get_cache_ref_map("#{fields.join(":")}",args.join(":"))
+          cache_instance = cache_get(cache_key)
+          
+          if cache_key.nil? || cache_instance.nil?
+            returning(find(:first, :conditions => [ "#{fields.join(" = ? AND ")} = ? ", *args ])) do |instance|
+              instance.cache_or_flush {}
+              set_cache_ref_map("#{fields.join(":")}",args.join(":"),instance.cache_id)
+            end
+          else
+            cache_instance
+          end
+          
+        end  
+        
+      EOS
+    end
+    
     def cache_field_alias(fields)
       fields.each do |field|
-        self.class_eval <<-EOS, __FILE__, __LINE__   
-          def self.find_by_#{field}(*args)
-            
-            field_value = args.shift
+        if field.kind_of?(Array)
+          field.each { |f| cache_field_alias_eval(f) }
+          cache_field_alias_multiple_eval(field)
           
-            cache_key = nil
-            if "#{field}" == "id"
-              cache_key = field_value
-            else
-              cache_key = get_cache_ref_map("#{field}",field_value)
-            end        
-                 
-            cache_instance = cache_get(cache_key)
-            if cache_key.nil? || cache_instance.nil?
-              returning(find(:first, :conditions => { :#{field} => field_value }, *args)) do |instance|
-                instance.cache_or_flush {}
-                set_cache_ref_map("#{field}",field_value,instance.cache_id)
-              end
-            else
-              cache_instance
-            end
-          end          
-        EOS
+        else
+          cache_field_alias_eval(field)
+        end
       end    
     end
     
