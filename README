@@ -1,0 +1,36 @@
+== acts_as_cached ==
+
+TestAac1.class_eval %q{
+  acts_as_capacitor({
+    :compression => true,
+    :debug => false,
+    :namespace => "acts_as_capacitor",
+    :readonly => false,
+    :urlencode => false,
+    :c_threshold => 10_000,
+    :servers => ["127.0.0.1:2222"]
+    }, {
+      :trashold => 100
+    })
+}
+
+t = TestAac1.new
+t.today = 0
+(1..100).each do |i|
+  t.date = "20081224"
+  t.today = i
+  t.save
+end
+
+count = ActiveRecord::Base.connection.select_rows("select today from #{TestAac1.table_name} where id = #{t.id}")
+count = count.flatten.to_s.to_i
+
+assert_equal 1, count
+
+t.today = t.today + 1
+t.save
+
+count = ActiveRecord::Base.connection.select_rows("select today from #{TestAac1.table_name} where id = #{t.id}")
+count = count.flatten.to_s.to_i
+
+assert_equal t.today, count
