@@ -1,4 +1,4 @@
-== acts_as_cached ==
+== acts_as_capacitor ==
 
 TestAac1.class_eval %q{
   acts_as_capacitor({
